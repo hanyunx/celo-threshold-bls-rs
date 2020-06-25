@@ -227,6 +227,7 @@ mod tests {
         // the first participant will not participate in the DKG
         // since they're being removed in this example
         let dkg_outputs = &dkg_outputs[1..];
+        //let dkg_outputs = &dkg_outputs[..dkg_outputs.len() - 1];
 
         // generate the new ephemeral keys
         let keypairs = (0..new_n).map(|_| S::keypair(rng)).collect::<Vec<_>>();
