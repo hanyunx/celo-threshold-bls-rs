@@ -37,6 +37,8 @@ pub struct KeygenOpts {
 
     #[options(help = "path to the file where the keys will be written (stdout if none provided)")]
     pub path: Option<String>,
+
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -58,6 +60,8 @@ pub struct DKGConfig {
         help = "the path where the result of the DKG will be stored (stdout if none provided)"
     )]
     pub output_path: Option<String>,
+
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -92,6 +96,8 @@ pub struct ReshareConfig {
 
     #[options(help = "the public polynomial which was produced in the previous DKG")]
     pub public_polynomial: String,
+
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -111,6 +117,8 @@ pub struct DeployOpts {
 
     #[options(help = "the number of blocks per phase")]
     pub phase_duration: usize,
+
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -127,6 +135,8 @@ pub struct StartOpts {
 
     #[options(help = "the DKG contract's address")]
     pub contract_address: Address,
+
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Options, Clone)]
@@ -146,4 +156,6 @@ pub struct AllowlistOpts {
 
     #[options(help = "the DKG contract's address")]
     pub contract_address: Address,
+
+    pub chain_id: u64,
 }

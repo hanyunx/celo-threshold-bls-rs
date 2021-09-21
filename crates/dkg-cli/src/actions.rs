@@ -33,7 +33,7 @@ pub fn keygen<R>(opts: KeygenOpts, rng: &mut R) -> Result<()>
 where
     R: RngCore,
 {
-    let wallet = Wallet::new(rng);
+    let wallet = Wallet::new(rng).set_chain_id(opts.chain_id);
     let output = CeloKeypairJson {
         private_key: hex::encode(bincode::serialize(wallet.private_key())?),
         address: wallet.address(),
@@ -55,7 +55,8 @@ pub async fn deploy(opts: DeployOpts) -> Result<()> {
     let bytecode = bytecode.from_hex::<Vec<u8>>()?;
 
     let provider = Provider::<Http>::try_from(opts.node_url.as_str())?;
-    let client = opts.private_key.parse::<Wallet>()?.connect(provider);
+    let wallet = opts.private_key.parse::<Wallet>()?.set_chain_id(opts.chain_id);
+    let client = wallet.connect(provider);
     let abi = DKG_ABI.clone();
 
     let factory = ContractFactory::new(abi, Bytes::from(bytecode), client);
@@ -70,7 +71,8 @@ pub async fn deploy(opts: DeployOpts) -> Result<()> {
 
 pub async fn allow(opts: AllowlistOpts) -> Result<()> {
     let provider = Provider::<Http>::try_from(opts.node_url.as_str())?;
-    let client = opts.private_key.parse::<Wallet>()?.connect(provider);
+    let wallet = opts.private_key.parse::<Wallet>()?.set_chain_id(opts.chain_id);
+    let client = wallet.connect(provider);
 
     let contract = DKGContract::new(opts.contract_address, client);
 
@@ -93,7 +95,8 @@ pub async fn allow(opts: AllowlistOpts) -> Result<()> {
 
 pub async fn start(opts: StartOpts) -> Result<()> {
     let provider = Provider::<Http>::try_from(opts.node_url.as_str())?;
-    let client = opts.private_key.parse::<Wallet>()?.connect(provider);
+    let wallet = opts.private_key.parse::<Wallet>()?.set_chain_id(opts.chain_id);
+    let client = wallet.connect(provider);
 
     let contract = DKGContract::new(opts.contract_address, client);
 
@@ -112,7 +115,8 @@ where
     R: RngCore,
 {
     let provider = Provider::<Http>::try_from(opts.node_url.as_str())?;
-    let client = Arc::new(opts.private_key.parse::<Wallet>()?.connect(provider));
+    let wallet = opts.private_key.parse::<Wallet>()?.set_chain_id(opts.chain_id);
+    let client = Arc::new(wallet.connect(provider));
 
     // we need the previous group and public poly for resharing
     let previous_group = {
@@ -155,7 +159,8 @@ where
     R: RngCore,
 {
     let provider = Provider::<Http>::try_from(opts.node_url.as_str())?;
-    let client = opts.private_key.parse::<Wallet>()?.connect(provider);
+    let wallet = opts.private_key.parse::<Wallet>()?.set_chain_id(opts.chain_id);
+    let client = wallet.connect(provider);
     let dkg = DKGContract::new(opts.contract_address, client);
 
     // 1. Generate the keys
