@@ -1,8 +1,9 @@
-use crate::group::{Element, Curve, PairingCurve, Point};
+use crate::group::{Element, Curve, PairingCurve, Point, Scalar};
 use crate::sig::{Scheme, SignatureScheme};
 use rand::prelude::*;
-use std::{fmt::Debug};
+use std::{fmt::Debug, marker::PhantomData};
 use algebra::Group;
+use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 // #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -26,21 +27,30 @@ pub mod poprf {
     use super::*;
 
     pub trait POPRFScheme {
+        /// `...` represents the field over which private keys are represented.
+        type Scalar: Scalar<RHS = Self::Scalar>;
+        /// `...` represents the group over which the public keys are
+        /// represented.
+        type G2: Point<RHS = Self::Scalar> + Serialize + DeserializeOwned;
+        /// `...` represents the group over which the signatures are reresented.
+        type G1: Point<RHS = Self::Scalar> + Serialize + DeserializeOwned;
+
 
         fn req(
             public: &Self::Public, // remove?
             domain_tag: &[u8],
             msg: &[u8],
-        )  -> Result<((&[u8],)), POPRFError>{ // TODO: return type
-            let r = Self::Private::rand(rng); // or ::rand(&mut thread_rng())?
-            let c = Self::Private::rand(rng);
-            let d = Self::Private::rand(rng);
+        )  -> Result<((&[u8], &[u8], Self::Scalar, Self::Scalar, Self::Scalar), (Self::G2, Self::G2)), POPRFError>{ // TODO: return type
+            let rng = &mut rand::thread_rng();
+            let r = Self::Scalar::rand(rng); // TODO: move to preprocessing?
+            let c = Self::Scalar::rand(rng);
+            let d = Self::Scalar::rand(rng);
 
-            let mut h = Self::Signature::new(); //TODO: replace Signature: H2
+            let mut h = Self::G2::new(); //TODO: replace Signature: H2
             h.map(msg).map_err(|_| POPRFError::HashingError)?;
 
             let a = h.mul(r);
-            let b = h.mul(c).add(Self::Signature::one().mul(d)); // b = h^c * g2^d
+            let b = h.mul(c).add(Self::G2::one().mul(d)); // b = h^c * g2^d
 
             ((domain_tag, m, r, c, d), (a, b))
         }
@@ -99,14 +109,13 @@ pub struct G2Scheme<C: PairingCurve> {
     m: PhantomData<C>,
 }
 
-impl<C> POPRFScheme for G2Scheme<C>
+impl<C> poprf::POPRFScheme for G2Scheme<C>
     where
         C: PairingCurve,
 {
-    // TODO: rename
-    type Private = C::Scalar;
-    type Public = C::G2;
-    type Signature = C::G1;
+    type Scalar = C::Scalar;
+    type G2 = C::G2;
+    type G1 = C::G1;
 }
 
 
