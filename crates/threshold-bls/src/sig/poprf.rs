@@ -1,26 +1,18 @@
 use crate::group::{Element, Curve, PairingCurve, Point, Scalar};
-use crate::sig::{Scheme, SignatureScheme};
+use crate::sig::{Scheme, SignatureScheme, Share};
 use rand::prelude::*;
 use std::{fmt::Debug, marker::PhantomData};
 use algebra::Group;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
-// #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-// /// A private share which is part of the threshold signing key
-// pub struct Share<S> {
-//     /// The share's index in the polynomial
-//     pub index: Idx,
-//     /// The scalar corresponding to the share's secret
-//     pub private: S,
-// }
-
 #[derive(Debug, Error)]
 pub enum POPRFError {
     #[error("could not hash to curve")]
     HashingError,
 
-    // TODO
+    #[error("could not serialize")]
+    SerializationError,
 }
 
 pub mod poprf {
@@ -46,56 +38,75 @@ pub mod poprf {
             let c = Self::Scalar::rand(rng);
             let d = Self::Scalar::rand(rng);
 
-            let mut h = Self::G2::new(); //TODO: replace Signature: H2
+            let mut h = Self::G2::new();
             h.map(msg).map_err(|_| POPRFError::HashingError)?;
 
             let a = h.mul(r);
             let b = h.mul(c).add(Self::G2::one().mul(d)); // b = h^c * g2^d
 
-            ((domain_tag, m, r, c, d), (a, b))
+            Ok((domain_tag, m, r, c, d), (a, b))
         }
 
         // Prove(a, b, c/r, d)
         fn prove(
-            a,
-            b,
-            x,
-            y,
-        ) {
-            let v1 = Self::Private::rand(rng);
-            let v2 = Self::Private::rand(rng);
-            let g2 = self::Self::Signature::one();
+            a: Self::G2,
+            b: self::G2,
+            x: Self::Scalar,
+            y: Self::Scalar,
+        ) -> Result<(Self::Scalar, Self::Scalar, Self::Scalar), POPRFError>{
+            let rng = &mut rand::thread_rng();
+            let v1 = Self::Scalar::rand(rng);
+            let v2 = Self::Scalar::rand(rng);
+            let g2 = self::Self::G2::one();
             let v =  g2.mul(v1).add(a.mul(v2));
-            let concatenate = ();//  TODO: g2 ∣∣V ∣∣a∣∣b
-            let z = Self::Signature::new();
-            z.map(concatenate).map_err(|_| POPRFError::HashingError)?;
-            let u1 = v1.sub(y.add(z)); // TODO:v1 −y⋅z ?
-            let u1 = v2.sub(x.add(z));
 
-            (z, u1, u2)
+            // Concatenate (g2 || v || a || b)
+            let g2_ser = bincode::serialize(&g2).map_err(|_| POPRFError::SerializationError)?;
+            let v_ser = bincode::serialize(&v).map_err(|_| POPRFError::SerializationError)?;
+            let a_ser = bincode::serialize(&a).map_err(|_| POPRFError::SerializationError)?;
+            let b_ser = bincode::serialize(&b).map_err(|_| POPRFError::SerializationError)?;
+            let mut concatenate:Vec<u8> = [g2_ser, v_ser, a_ser, b_ser].concat();
+
+            // TODO: implement hash to scalar field
+            let mut z = Self::G2::new();
+            z.map(concatenate).map_err(|_| POPRFError::HashingError)?;
+            
+            let s1 = v1.sub(y.mul(z));
+            let s2 = v2.sub(x.mul(z));
+
+            Ok(z, s1, s2)
         }
 
         fn verify(
-            a,
-            b,
-            pi,
-        ) {
-            z = ();// TODO?
-            let g2 = self::Self::Signature::one();
-            let v =  g2.mul(u1).add(a.mul(u2)).add(b.mul(z));
-            let concatenate = ();//  TODO: g2 ∣∣V ∣∣a∣∣b
-            let h = Self::Signature::new();
-            h.map(concatenate).map_err(|_| POPRFError::HashingError)?;
+            a: Self::G2,
+            b: Self::G2,
+            z: Self::Scalar,
+            s1: Self::Scalar,
+            s2: Self::Scalar,
+        ) -> Result<bool, POPRFError> {
+            let g2 = self::Self::G2::one();
+            let v =  g2.mul(s1).add(a.mul(s2)).add(b.mul(z));
 
-            (z == h)
+            // Concatenate (g2 || v || a || b)
+            let g2_ser = bincode::serialize(&g2).map_err(|_| POPRFError::SerializationError)?;
+            let v_ser = bincode::serialize(&v).map_err(|_| POPRFError::SerializationError)?;
+            let a_ser = bincode::serialize(&a).map_err(|_| POPRFError::SerializationError)?;
+            let b_ser = bincode::serialize(&b).map_err(|_| POPRFError::SerializationError)?;
+            let mut concatenate:Vec<u8> = [g2_ser, v_ser, a_ser, b_ser].concat();
+
+            // TODO: implement hash to scalar field
+            // let h = 
+
+            Ok(z == h)
         }
 
-        fn blind_ev() {
+        fn blind_ev(k: Self::Scalar, t, (a, b)) -> Result<(Self::GT, Self::GT), POPRFError>; 
 
-        }
-
-        fn aggregate() {
-
+        fn aggregate(
+            threshold:usize,
+            shares: &[(Share<(Self::GT, Self::GT)>, Share<(Self::GT, Self::GT)>)]
+        ) -> Result<(Self::GT, Self::GT), POPRFError>{
+            
         }
 
         fn finalize() {
@@ -103,6 +114,7 @@ pub mod poprf {
         }
     }
 }
+
 
 #[derive(Clone, Debug)]
 pub struct G2Scheme<C: PairingCurve> {
@@ -113,9 +125,23 @@ impl<C> poprf::POPRFScheme for G2Scheme<C>
     where
         C: PairingCurve,
 {
+    fn blind_ev(k, t, (a, b)) -> Result<(Self::GT, Self::GT), POPRFError> {
+        let mut h = Self::G1::new();
+        h.map(t).map_err(|_| POPRFError::HashingError);
+        let hk = h.mul(k);
+        // A <- e(H1(t)^k, a)
+        let A = C::pair(&hk, &a);
+        // B <- e(H1(t)^k, b)
+        let B = C::pair(&hk, &b);
+
+        (A, B)
+
+    }
+
     type Scalar = C::Scalar;
     type G2 = C::G2;
     type G1 = C::G1;
+    type GT = C::GT;
 }
 
 
