@@ -19,18 +19,16 @@ pub mod poprf {
     use super::*;
 
     pub trait POPRFScheme {
-        /// `...` represents the field over which private keys are represented.
         type Scalar: Scalar<RHS = Self::Scalar>;
-        /// `...` represents the group over which the public keys are
-        /// represented.
-        type G2: Point<RHS = Self::Scalar> + Serialize + DeserializeOwned;
-        /// `...` represents the group over which the signatures are reresented.
+
         type G1: Point<RHS = Self::Scalar> + Serialize + DeserializeOwned;
+
+        type G2: Point<RHS = Self::Scalar> + Serialize + DeserializeOwned;
 
 
         fn req(
-            public: &Self::Public, // remove?
-            domain_tag: &[u8],
+            v: &Self::G2, // remove?
+            t: &[u8], // non-secret domain tag
             msg: &[u8],
         )  -> Result<((&[u8], &[u8], Self::Scalar, Self::Scalar, Self::Scalar), (Self::G2, Self::G2)), POPRFError>{ // TODO: return type
             let rng = &mut rand::thread_rng();
@@ -44,7 +42,7 @@ pub mod poprf {
             let a = h.mul(r);
             let b = h.mul(c).add(Self::G2::one().mul(d)); // b = h^c * g2^d
 
-            Ok((domain_tag, m, r, c, d), (a, b))
+            Ok((t, m, r, c, d), (a, b))
         }
 
         // Prove(a, b, c/r, d)
@@ -100,18 +98,47 @@ pub mod poprf {
             Ok(z == h)
         }
 
-        fn blind_ev(k: Self::Scalar, t, (a, b)) -> Result<(Self::GT, Self::GT), POPRFError>; 
+        fn blind_ev(
+            k: Self::Scalar,
+            t: &[u8],
+            a: Self::G2,
+            b: Self::G2,
+        ) -> Result<(Self::GT, Self::GT), POPRFError>;
 
         fn aggregate(
             threshold:usize,
-            shares: &[(Share<(Self::GT, Self::GT)>, Share<(Self::GT, Self::GT)>)]
+            shares: &[(Share<Self::GT>, Share<Self::GT>)]
         ) -> Result<(Self::GT, Self::GT), POPRFError>{
-            
+            if threshold > shares.len() {
+                return Err(ThresholdError::NotEnoughPartialSignatures(
+                    partials.len(),
+                    threshold,
+                ));
+            }
+
+            let mut A = Self::GT::new();
+            let mut B = Self::GT::new();
+            shares
+                .iter()
+                .map(|(Ai, Bi)| {
+                    let lambda; // TODO: lambda_i(0)
+                    A = A.add(Ai.mul(lambda));
+                    B = B.add(Bi.mul(lambda));
+                });
+
+            (A, B)
         }
 
-        fn finalize() {
-
-        }
+        fn finalize(
+            v: &Self::G2,
+            A: Self::GT,
+            B: Self::GT,
+            t: &[u8],
+            m: &[u8],
+            r: Self::Scalar,
+            c: Self::Scalar,
+            d: Self::Scalar,
+        ) -> Result<_, POPRFError>;
     }
 }
 
@@ -125,7 +152,12 @@ impl<C> poprf::POPRFScheme for G2Scheme<C>
     where
         C: PairingCurve,
 {
-    fn blind_ev(k, t, (a, b)) -> Result<(Self::GT, Self::GT), POPRFError> {
+    fn blind_ev(
+        k: Self::Scalar,
+        t: &[u8],
+        a: Self::G2,
+        b: Self::G2,
+    ) -> Result<(Self::GT, Self::GT), POPRFError> {
         let mut h = Self::G1::new();
         h.map(t).map_err(|_| POPRFError::HashingError);
         let hk = h.mul(k);
@@ -134,8 +166,29 @@ impl<C> poprf::POPRFScheme for G2Scheme<C>
         // B <- e(H1(t)^k, b)
         let B = C::pair(&hk, &b);
 
-        (A, B)
+        (A, B)  // rep <- (A, B)
 
+    }
+
+    fn finalize(
+        v: &Self::G2,
+        A: Self::GT,
+        B: Self::GT,
+        t: &[u8],
+        m: &[u8],
+        r: Self::Scalar,
+        c: Self::Scalar,
+        d: Self::Scalar,
+    ) -> Result<_, POPRFError> {
+        // y_A = A^(r^(-1))
+        let y_A = A.mul(r.inverse());
+        let mut h = Self::G1::new();
+        h.map(t).map_err(|_| POPRFError::HashingError);
+        // y_b <- B^(c^(-1)) e(H1(t), v^(-dc^(-1)))
+        let y_B = B.mul(c.inverse()).add(C::pair(&h, v.mul(d.mul(c.inverse()).negate())));
+        assert_eq!(y_A, y_B)
+
+        Ok(y_A)
     }
 
     type Scalar = C::Scalar;
